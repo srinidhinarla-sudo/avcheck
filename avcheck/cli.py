@@ -13,6 +13,7 @@ from avcheck.audio.integrity import (
     detect_clipping,
     detect_silence_dropouts,
 )
+from avcheck.inject.engine import inject_all_defects
 from avcheck.video.plotting import plot_quality_curve
 from avcheck.video.quality import score_video
 
@@ -125,6 +126,12 @@ def build_parser() -> argparse.ArgumentParser:
     video_parser.add_argument("-o", "--output", default="avcheck_video_report.csv", help="Per-frame CSV output path")
     video_parser.add_argument("--plot", default="avcheck_quality_curve.png", help="Quality-curve plot output path")
 
+    inject_parser = subparsers.add_parser("inject", help="Generate ground-truth-labeled defect variants")
+    inject_parser.add_argument("reference_video", help="Path to reference video file")
+    inject_parser.add_argument("reference_audio", help="Path to reference audio file")
+    inject_parser.add_argument("-o", "--output-dir", default="avcheck_variants", help="Output directory for variants")
+    inject_parser.add_argument("--seed", type=int, default=0, help="Random seed for defect placement")
+
     return parser
 
 
@@ -146,6 +153,14 @@ def main(argv=None) -> int:
         _print_video_summary(result["summary"])
         print(f"\nPer-frame CSV written to {args.output}")
         print(f"Quality-curve plot written to {args.plot}")
+        return 0
+
+    if args.command == "inject":
+        manifest = inject_all_defects(args.reference_video, args.reference_audio, args.output_dir, seed=args.seed)
+        print(f"=== AVCheck Injection Report ===\nGenerated {len(manifest['variants'])} labeled variants in {args.output_dir}:")
+        for variant in manifest["variants"]:
+            print(f"  {variant['name']:<16} ({variant['media']}) -> {variant['file']}")
+        print(f"\nManifest written to {manifest['manifest_path']}")
         return 0
 
     parser.error(f"Unknown command: {args.command}")
