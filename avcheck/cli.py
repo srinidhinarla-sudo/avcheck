@@ -1,9 +1,118 @@
 """avcheck command-line entry point."""
 
+import argparse
+import csv
+import sys
 
-def main() -> None:
-    raise NotImplementedError("CLI wiring comes after the audio detectors are implemented.")
+import librosa
+
+from avcheck.audio.integrity import (
+    compare_chromagram,
+    compute_dynamic_range_delta,
+    compute_loudness_delta,
+    detect_clipping,
+    detect_silence_dropouts,
+)
+
+
+def _run_audio_checks(ref_path: str, test_path: str) -> dict:
+    ref, sr = librosa.load(ref_path, sr=None, mono=True)
+    test, _ = librosa.load(test_path, sr=sr, mono=True)
+
+    return {
+        "clipping_ref": detect_clipping(ref, sr),
+        "clipping_test": detect_clipping(test, sr),
+        "loudness": compute_loudness_delta(ref, test, sr),
+        "dropouts": detect_silence_dropouts(ref, test, sr),
+        "dynamic_range": compute_dynamic_range_delta(ref, test, sr),
+        "chromagram": compare_chromagram(ref, test, sr),
+    }
+
+
+def _write_csv(results: dict, output_path: str) -> None:
+    loudness = results["loudness"]
+    worst_time, worst_delta = loudness["worst_window"] if loudness["worst_window"] else ("", "")
+
+    rows = [
+        ("clipping_ref", "num_clipped_samples", results["clipping_ref"]["num_clipped_samples"]),
+        ("clipping_ref", "clipped_ratio", results["clipping_ref"]["clipped_ratio"]),
+        ("clipping_ref", "num_clipped_regions", results["clipping_ref"]["num_clipped_regions"]),
+        ("clipping_test", "num_clipped_samples", results["clipping_test"]["num_clipped_samples"]),
+        ("clipping_test", "clipped_ratio", results["clipping_test"]["clipped_ratio"]),
+        ("clipping_test", "num_clipped_regions", results["clipping_test"]["num_clipped_regions"]),
+        ("loudness", "global_delta_db", loudness["global_delta_db"]),
+        ("loudness", "worst_window_time_sec", worst_time),
+        ("loudness", "worst_window_delta_db", worst_delta),
+        ("dropouts", "num_dropout_regions", results["dropouts"]["num_dropout_regions"]),
+        ("dynamic_range", "ref_dynamic_range_db", results["dynamic_range"]["ref_dynamic_range_db"]),
+        ("dynamic_range", "test_dynamic_range_db", results["dynamic_range"]["test_dynamic_range_db"]),
+        ("dynamic_range", "dynamic_range_delta_db", results["dynamic_range"]["dynamic_range_delta_db"]),
+        ("chromagram", "mean_chroma_similarity", results["chromagram"]["mean_chroma_similarity"]),
+        ("chromagram", "worst_frame_similarity", results["chromagram"]["worst_frame_similarity"]),
+        ("chromagram", "worst_frame_time_sec", results["chromagram"]["worst_frame_time_sec"]),
+    ]
+
+    with open(output_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["check", "metric", "value"])
+        writer.writerows(rows)
+        for label, key in (("clipping_ref", "clipping_ref"), ("clipping_test", "clipping_test")):
+            for start, end in results[key]["clipped_regions"]:
+                writer.writerow([label, "clipped_region", f"{start:.3f}-{end:.3f}"])
+        for start, end in results["dropouts"]["dropout_regions"]:
+            writer.writerow(["dropouts", "dropout_region", f"{start:.3f}-{end:.3f}"])
+
+
+def _print_summary(results: dict) -> None:
+    dr = results["dynamic_range"]
+    chroma = results["chromagram"]
+    print("=== AVCheck Audio Report ===")
+    print(
+        f"Clipping (ref):  {results['clipping_ref']['num_clipped_regions']} region(s), "
+        f"{results['clipping_ref']['clipped_ratio'] * 100:.3f}% of samples"
+    )
+    print(
+        f"Clipping (test): {results['clipping_test']['num_clipped_regions']} region(s), "
+        f"{results['clipping_test']['clipped_ratio'] * 100:.3f}% of samples"
+    )
+    print(f"Loudness delta:  {results['loudness']['global_delta_db']:+.2f} dB")
+    print(f"Dropout regions: {results['dropouts']['num_dropout_regions']}")
+    print(
+        f"Dynamic range:   ref {dr['ref_dynamic_range_db']:.2f} dB -> "
+        f"test {dr['test_dynamic_range_db']:.2f} dB ({dr['dynamic_range_delta_db']:+.2f} dB)"
+    )
+    print(
+        f"Chroma similarity: mean {chroma['mean_chroma_similarity']:.3f}, "
+        f"worst {chroma['worst_frame_similarity']:.3f} @ {chroma['worst_frame_time_sec']:.2f}s"
+    )
+
+
+def build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(prog="avcheck", description="Automated audio/video validation toolkit")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    audio_parser = subparsers.add_parser("audio", help="Run audio integrity checks")
+    audio_parser.add_argument("reference", help="Path to reference audio file")
+    audio_parser.add_argument("test", help="Path to processed/degraded audio file")
+    audio_parser.add_argument("-o", "--output", default="avcheck_audio_report.csv", help="CSV output path")
+
+    return parser
+
+
+def main(argv=None) -> int:
+    parser = build_parser()
+    args = parser.parse_args(argv)
+
+    if args.command == "audio":
+        results = _run_audio_checks(args.reference, args.test)
+        _write_csv(results, args.output)
+        _print_summary(results)
+        print(f"\nCSV report written to {args.output}")
+        return 0
+
+    parser.error(f"Unknown command: {args.command}")
+    return 2
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
