@@ -1,0 +1,19 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "avcheck"
+version = "0.1.0"
+description = "Automated audio/video validation toolkit that detects and explains media quality defects"
+requires-python = ">=3.9"
+dependencies = [
+    "librosa",
+    "numpy",
+]
+
+[project.scripts]
+avcheck = "avcheck.cli:main"
+
+[tool.setuptools.packages.find]
+include = ["avcheck*"]
