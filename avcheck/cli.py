@@ -13,6 +13,8 @@ from avcheck.audio.integrity import (
     detect_clipping,
     detect_silence_dropouts,
 )
+from avcheck.video.plotting import plot_quality_curve
+from avcheck.video.quality import score_video
 
 
 def _run_audio_checks(ref_path: str, test_path: str) -> dict:
@@ -87,6 +89,27 @@ def _print_summary(results: dict) -> None:
     )
 
 
+def _write_video_csv(per_frame: list, output_path: str) -> None:
+    with open(output_path, "w", newline="") as f:
+        writer = csv.writer(f)
+        writer.writerow(["frame", "timestamp_sec", "psnr_db", "ssim"])
+        for row in per_frame:
+            writer.writerow([row["frame"], f"{row['timestamp']:.4f}", row["psnr"], row["ssim"]])
+
+
+def _print_video_summary(summary: dict) -> None:
+    print("=== AVCheck Video Report ===")
+    print(f"Frames scored:   {summary['num_frames']}")
+    print(f"Mean PSNR:       {summary['mean_psnr']:.2f} dB")
+    print(f"Min PSNR:        {summary['min_psnr']:.2f} dB")
+    print(f"Mean SSIM:       {summary['mean_ssim']:.4f}")
+    if summary["worst_frame_index"] is not None:
+        print(
+            f"Min SSIM:        {summary['min_ssim']:.4f} @ frame {summary['worst_frame_index']} "
+            f"({summary['worst_frame_timestamp']:.2f}s)"
+        )
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="avcheck", description="Automated audio/video validation toolkit")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -95,6 +118,12 @@ def build_parser() -> argparse.ArgumentParser:
     audio_parser.add_argument("reference", help="Path to reference audio file")
     audio_parser.add_argument("test", help="Path to processed/degraded audio file")
     audio_parser.add_argument("-o", "--output", default="avcheck_audio_report.csv", help="CSV output path")
+
+    video_parser = subparsers.add_parser("video", help="Run video quality scoring (PSNR/SSIM)")
+    video_parser.add_argument("reference", help="Path to reference video file")
+    video_parser.add_argument("test", help="Path to processed/degraded video file")
+    video_parser.add_argument("-o", "--output", default="avcheck_video_report.csv", help="Per-frame CSV output path")
+    video_parser.add_argument("--plot", default="avcheck_quality_curve.png", help="Quality-curve plot output path")
 
     return parser
 
@@ -108,6 +137,15 @@ def main(argv=None) -> int:
         _write_csv(results, args.output)
         _print_summary(results)
         print(f"\nCSV report written to {args.output}")
+        return 0
+
+    if args.command == "video":
+        result = score_video(args.reference, args.test)
+        _write_video_csv(result["per_frame"], args.output)
+        plot_quality_curve(result["per_frame"], args.plot)
+        _print_video_summary(result["summary"])
+        print(f"\nPer-frame CSV written to {args.output}")
+        print(f"Quality-curve plot written to {args.plot}")
         return 0
 
     parser.error(f"Unknown command: {args.command}")
