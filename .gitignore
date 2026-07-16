@@ -8,3 +8,9 @@ dist/
 *.csv
 .DS_Store
 *.so
+
+# CLI-generated output, not source
+avcheck_*.json
+avcheck_*.png
+avcheck_variants/
+fixtures/
