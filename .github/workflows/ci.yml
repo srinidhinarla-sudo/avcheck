@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y ffmpeg
+
+      - name: Install avcheck (builds the C++ extension)
+        run: pip install -e ".[dev]"
+
+      - name: Run pytest
+        run: pytest tests/ -v
+
+      - name: Mini end-to-end validation (inject -> detect -> triage)
+        run: python scripts/e2e_demo.py
