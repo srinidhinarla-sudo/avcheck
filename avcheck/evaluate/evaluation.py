@@ -107,3 +107,10 @@ def write_evaluation_csv(report: dict, output_path: str) -> None:
         writer.writerow(["defect_class", "tp", "fp", "fn", "precision", "recall"])
         for name, r in report.items():
             writer.writerow([name, r["tp"], r["fp"], r["fn"], f"{r['precision']:.3f}", f"{r['recall']:.3f}"])
+
+
+def write_evaluation_json(report: dict, output_path: str) -> None:
+    import json
+
+    with open(output_path, "w") as f:
+        json.dump(report, f, indent=2)
