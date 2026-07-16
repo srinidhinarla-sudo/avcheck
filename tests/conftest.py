@@ -41,3 +41,45 @@ def write_video(path: str, frames: list, fps: int = 10) -> None:
     for frame in frames:
         writer.write(frame)
     writer.release()
+
+
+def make_gradient_frames(num_frames: int, size=FRAME_SIZE) -> list:
+    """Smooth horizontal gradient frames — realistic content for banding, since
+    banding is specifically about loss of smooth tonal gradation."""
+    width, height = size
+    x = np.linspace(0, 255, width)
+    return [np.stack([np.tile(x, (height, 1)).astype(np.uint8)] * 3, axis=-1) for _ in range(num_frames)]
+
+
+def make_demo_frames(num_frames: int, fps: float, size=FRAME_SIZE, flash_interval_sec: float = 1.0) -> list:
+    """A moving smooth gradient with periodic brightness 'flash' frames.
+
+    Smoothness makes banding/color-shift detectable (unlike pure noise); frame
+    motion (the shift) makes frame-diff-based detectors meaningful; the flashes
+    give A/V-desync detection a real visual event to correlate against audio clicks.
+    """
+    width, height = size
+    x = np.linspace(0, 255, width)
+    frames = []
+    for i in range(num_frames):
+        shift = (i * 3) % width
+        grad_row = np.roll(x, shift).astype(np.uint8)
+        frame = np.stack([np.tile(grad_row, (height, 1))] * 3, axis=-1)
+        t = i / fps
+        if (t % flash_interval_sec) < (1.0 / fps):
+            frame = np.clip(frame.astype(int) + 150, 0, 255).astype(np.uint8)
+        frames.append(frame)
+    return frames
+
+
+def make_demo_audio(duration_sec: float, sr: int = SR, flash_interval_sec: float = 1.0, tone_freq: float = 440.0) -> np.ndarray:
+    """A quiet tone with periodic click bursts timed to match make_demo_frames' flashes."""
+    t = np.arange(int(duration_sec * sr)) / sr
+    audio = (0.2 * np.sin(2 * np.pi * tone_freq * t)).astype(np.float64)
+    rng = np.random.default_rng(0)
+    click_dur = 0.05
+    for click_time in np.arange(0, duration_sec, flash_interval_sec):
+        start = int(click_time * sr)
+        end = min(int((click_time + click_dur) * sr), len(audio))
+        audio[start:end] += np.clip(0.3 * rng.standard_normal(end - start), -0.5, 0.5)
+    return audio.astype(np.float32)

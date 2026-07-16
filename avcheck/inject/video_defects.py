@@ -1,6 +1,5 @@
 """Video-side defect injectors. Each returns (new_frames, ground_truth_dict)."""
 
-import cv2
 import numpy as np
 
 
@@ -89,20 +88,26 @@ def inject_banding(frames: list, fps: float, levels: int = 8) -> tuple:
     return new_frames, ground_truth
 
 
-def inject_color_shift(frames: list, fps: float, hue_shift: int = 40) -> tuple:
-    """Rotate hue in HSV space across the whole clip (simulates a color-pipeline/LUT bug)."""
-    new_frames = []
-    for f in frames:
-        hsv = cv2.cvtColor(f, cv2.COLOR_BGR2HSV).astype(np.int16)
-        hsv[..., 0] = (hsv[..., 0] + hue_shift) % 180
-        new_frames.append(cv2.cvtColor(hsv.astype(np.uint8), cv2.COLOR_HSV2BGR))
+def inject_color_shift(frames: list, fps: float, channel_shift_bgr: tuple = (30, -10, -20)) -> tuple:
+    """Apply a fixed per-channel (B, G, R) offset across the whole clip, simulating
+    a white-balance/color-cast defect (wrong color matrix or white point).
+
+    An earlier version of this injector rotated hue in HSV space, which turned out
+    to be a no-op on desaturated/grayscale content: hue is mathematically undefined
+    when saturation is zero, so "rotating" it changes a meaningless number without
+    changing any pixel value. A direct per-channel BGR offset stays visible on any
+    source content, including grayscale, which is also a more faithful model of how
+    real color-cast defects actually manifest.
+    """
+    shift = np.array(channel_shift_bgr, dtype=np.int16)
+    new_frames = [np.clip(f.astype(np.int16) + shift, 0, 255).astype(np.uint8) for f in frames]
 
     duration = (len(frames) - 1) / fps if frames else 0.0
     ground_truth = {
         "defect_type": "color_shift",
         "media": "video",
         "fps": fps,
-        "params": {"hue_shift": hue_shift},
+        "params": {"channel_shift_bgr": list(channel_shift_bgr)},
         "events": [{"start_frame": 0, "end_frame": len(frames) - 1, "start_timestamp_sec": 0.0, "end_timestamp_sec": duration}],
     }
     return new_frames, ground_truth

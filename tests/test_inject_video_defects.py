@@ -52,6 +52,6 @@ def test_inject_banding_reduces_unique_pixel_values():
 
 def test_inject_color_shift_changes_pixels():
     frames = make_checkerboard_frames(5)
-    new_frames, gt = inject_color_shift(frames, fps=10, hue_shift=60)
-    assert gt["params"]["hue_shift"] == 60
+    new_frames, gt = inject_color_shift(frames, fps=10, channel_shift_bgr=(30, -10, -20))
+    assert gt["params"]["channel_shift_bgr"] == [30, -10, -20]
     assert not np.array_equal(frames[0], new_frames[0])

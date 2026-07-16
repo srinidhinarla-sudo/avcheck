@@ -13,6 +13,7 @@ from avcheck.audio.integrity import (
     detect_clipping,
     detect_silence_dropouts,
 )
+from avcheck.evaluate.evaluation import evaluate_variants, write_evaluation_csv
 from avcheck.inject.engine import inject_all_defects
 from avcheck.video.plotting import plot_quality_curve
 from avcheck.video.quality import score_video
@@ -132,6 +133,12 @@ def build_parser() -> argparse.ArgumentParser:
     inject_parser.add_argument("-o", "--output-dir", default="avcheck_variants", help="Output directory for variants")
     inject_parser.add_argument("--seed", type=int, default=0, help="Random seed for defect placement")
 
+    evaluate_parser = subparsers.add_parser("evaluate", help="Run all detectors against all injected variants")
+    evaluate_parser.add_argument("manifest", help="Path to manifest.json produced by `avcheck inject`")
+    evaluate_parser.add_argument("reference_video", help="Path to reference video file")
+    evaluate_parser.add_argument("reference_audio", help="Path to reference audio file")
+    evaluate_parser.add_argument("-o", "--output", default="avcheck_evaluation.csv", help="CSV output path")
+
     return parser
 
 
@@ -161,6 +168,16 @@ def main(argv=None) -> int:
         for variant in manifest["variants"]:
             print(f"  {variant['name']:<16} ({variant['media']}) -> {variant['file']}")
         print(f"\nManifest written to {manifest['manifest_path']}")
+        return 0
+
+    if args.command == "evaluate":
+        report = evaluate_variants(args.manifest, args.reference_video, args.reference_audio)
+        write_evaluation_csv(report, args.output)
+        print("=== AVCheck Evaluation Report ===")
+        print(f"{'defect_class':<16}{'precision':>10}{'recall':>10}{'tp':>6}{'fp':>6}{'fn':>6}")
+        for name, r in report.items():
+            print(f"{name:<16}{r['precision']:>10.3f}{r['recall']:>10.3f}{r['tp']:>6}{r['fp']:>6}{r['fn']:>6}")
+        print(f"\nCSV report written to {args.output}")
         return 0
 
     parser.error(f"Unknown command: {args.command}")
