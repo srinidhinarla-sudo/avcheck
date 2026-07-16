@@ -19,7 +19,7 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-dev = ["pytest", "soundfile"]
+dev = ["pytest", "pytest-cov", "soundfile"]
 
 [project.scripts]
 avcheck = "avcheck.cli:main"

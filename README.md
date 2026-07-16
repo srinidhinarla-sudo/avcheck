@@ -128,12 +128,33 @@ The gap in the PSNR panel before the dip is not missing data. PSNR is mathematic
 infinite for bit-identical frames, so those points are filtered out rather than plotted
 at an arbitrary height.
 
+## Performance: why the hot loop is in C++
+
+`scripts/benchmark_native.py` measures the Phase 5 tone-curve filter three ways: a
+naive per-pixel Python loop (the realistic baseline if you didn't reach for C++ or
+NumPy), a NumPy-vectorized lookup-table application, and the C++/pybind11
+implementation, all computing the identical brightness/gamma curve:
+
+| Resolution | Naive Python | NumPy | C++ (pybind11) | C++ vs naive | C++ vs NumPy |
+|---|---:|---:|---:|---:|---:|
+| 320x180 | 47.25 ms | 0.368 ms | 0.102 ms | 462x | 3.6x |
+| 640x360 | 185.64 ms | 0.998 ms | 0.370 ms | 502x | 2.7x |
+| 1280x720 | 737.47 ms | 3.858 ms | 1.475 ms | 500x | 2.6x |
+
+At 720p the C++ path processes a frame in 1.475 ms, over **650 frames/second
+single-threaded**, roughly **500x faster than the naive Python loop it replaces**
+and **2.6-3.6x faster than NumPy's own vectorized C implementation**. That second
+number is the more honest comparison; NumPy is also compiled C under the hood, so
+the win there is a real but modest one from a single-pass loop over NumPy's
+generalized fancy-indexing, not a "Python is slow" trick.
+
 ## Measured numbers
 
-- **67 automated tests**, all passing (`pytest tests/`)
+- **67 automated tests**, all passing (`pytest tests/`), **96% statement coverage** (`pytest --cov=avcheck`)
 - **~1,400 lines** of Python across 5 subsystems (audio, video, inject, evaluate, triage) + CLI
 - **~135 lines** of C++ (the Phase 5 tone-curve filter + pybind11 bindings)
 - **8/8 defect classes** detected with nonzero recall; 6/8 at perfect recall
+- **500x speedup** over naive Python, **2.6-3.6x over NumPy**, for the C++ tone-curve filter (measured, see Performance below)
 - **~5 seconds** for the full `inject → evaluate → triage` pipeline on a tiny synthetic clip (the same one CI runs per commit)
 - **1 real bug found and fixed** during Phase 4 evaluation (see AI section below)
 
